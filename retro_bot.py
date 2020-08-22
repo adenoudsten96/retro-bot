@@ -1,6 +1,7 @@
 import discord
 import inters
 import random
+import os
 
 client = discord.Client()
 intlist = inters.Intlist('inters.json')
@@ -112,4 +113,4 @@ async def on_message(message):
             await latest_msg.edit(content='<@!{}>   :skull_crossbones: <:peepobox2:655088598646784019>   {}'.format(ini, opp))
             await message.channel.send('{} has won the fight!'.format(opp))
 
-client.run()
+client.run(os.environ['RETROBOT'])
