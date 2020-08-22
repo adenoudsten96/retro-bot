@@ -112,4 +112,4 @@ async def on_message(message):
             await latest_msg.edit(content='<@!{}>   :skull_crossbones: <:peepobox2:655088598646784019>   {}'.format(ini, opp))
             await message.channel.send('{} has won the fight!'.format(opp))
 
-client.run('NzQ1OTc4MDEyNjkyMTE5NjQy.Xz5oKQ.3Rk1syY51PZ3dvlXOksYwE8XGuY')
+client.run()
