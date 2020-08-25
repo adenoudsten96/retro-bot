@@ -40,10 +40,9 @@ async def on_message(message):
             pass
     
     # Show all inters
-    if message.content.startswith('!intlist'):
-        # Make sure only Officers can use this command
+    if message.content == '!intlist':
         author_roles = [x.name for x in message.author.roles]
-        if 'Officer' in author_roles or 'Meme Machine' in author_roles:
+        if 'Raider' in author_roles:
             # Get inters from our list
             inters = intlist.get_inters()
             # Sort them descending
