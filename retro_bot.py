@@ -4,7 +4,7 @@ import discord
 import inters
 import re
 
-from sqlalchemy import create_engine, Column, String, Integer
+from sqlalchemy import create_engine, Column, String, Integer, or_, and_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -113,28 +113,35 @@ async def on_message(message):
         peepobox2 = "<:peepobox2:655088598646784019>"
         sess = Session()
         user = message.author.id
-        wins = sess.query(Fight).filter(Fight.user == user, Fight.winner == user).count()
+        wins = sess.query(Fight).filter(or_(Fight.user == user, Fight.opponent == user), and_(Fight.winner == user)).count()
+        losses = sess.query(Fight).filter(or_(Fight.user == user, Fight.opponent == user), and_(Fight.winner != user)).count()
 
-        # Check if user has a recorded fight history before continuing
-        if wins == 0:
-            await message.channel.send("No fighting history for <@!{}>. Get to fighting! {}".format(message.author.id, peepobox2))
-            return
+        # # Check if user has a recorded fight history before continuing
+        # if wins == 0 or losses == 0:
+        #     await message.channel.send("No fighting history for <@!{}>. Get to fighting! {}".format(message.author.id, peepobox2))
+        #     return
         
-        losses = sess.query(Fight).filter(Fight.user == user, Fight.winner != user).count()
-        latest_fights_query = sess.query(Fight).filter(Fight.user == user).order_by(Fight.id.desc()).limit(3).all()
+        latest_fights_query = sess.query(Fight).filter(or_(Fight.user == user, Fight.opponent == user)).order_by(Fight.id.desc()).limit(3).all()
         sess.close()
 
         latest_fights = ""
         for i in latest_fights_query:
             if i.winner == str(message.author.id):
-                latest_fights += ":crown: **Win** against <@!{}> \n".format(i.opponent)
+                # Win
+                if i.opponent == str(message.author.id):
+                    latest_fights += ":crown: **Win** against <@!{}> \n".format(i.user)
+                else:
+                    latest_fights += ":crown: **Win** against <@!{}> \n".format(i.opponent)
             else:
+                # Loss
                 latest_fights += ":skull_crossbones: **Loss** against <@!{}> \n".format(i.winner)
 
         embedVar = discord.Embed(title="{} Fight history for {} {}".format(peepobox, message.author.display_name, peepobox2), color=0xeb4034)
         embedVar.add_field(name=":crown: Wins", value="{}".format(wins), inline=True)
         embedVar.add_field(name=":skull_crossbones: Losses", value="{}".format(losses), inline=True)
         embedVar.add_field(name="Latest results", value=latest_fights, inline=False)
+        embedVar.set_thumbnail(url='https://www.iconfinder.com/data/icons/essentials-volume-3/128/boxing-gloves-512.png')
+        
         await message.channel.send(embed=embedVar)
 
     # Fighting game
@@ -198,7 +205,7 @@ async def on_message(message):
                                 select distinct opponent as user from fights)
                                 """)
         for user in all_users:
-            wins = sess.query(Fight).filter(Fight.user == user[0], Fight.winner == user[0]).count()
+            wins = sess.query(Fight).filter(Fight.winner == user[0]).count()
             scores[str(user[0])] = wins
         
         # Determine user with highest score
