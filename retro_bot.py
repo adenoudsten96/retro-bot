@@ -115,7 +115,7 @@ async def on_message(message):
         user = message.author.id
         wins = sess.query(Fight).filter(or_(Fight.user == user, Fight.opponent == user), and_(Fight.winner == user)).count()
         losses = sess.query(Fight).filter(or_(Fight.user == user, Fight.opponent == user), and_(Fight.winner != user)).count()
-
+        win_percentage = ( wins / (wins + losses) * 100)
         # # Check if user has a recorded fight history before continuing
         # if wins == 0 or losses == 0:
         #     await message.channel.send("No fighting history for <@!{}>. Get to fighting! {}".format(message.author.id, peepobox2))
@@ -139,6 +139,7 @@ async def on_message(message):
         embedVar = discord.Embed(title="{} Fight history for {} {}".format(peepobox, message.author.display_name, peepobox2), color=0xeb4034)
         embedVar.add_field(name=":crown: Wins", value="{}".format(wins), inline=True)
         embedVar.add_field(name=":skull_crossbones: Losses", value="{}".format(losses), inline=True)
+        embedVar.add_field(name=":trophy: Win percentage", value="{}%".format(round(win_percentage)), inline=True)
         embedVar.add_field(name="Latest results", value=latest_fights, inline=False)
         embedVar.set_thumbnail(url='https://www.iconfinder.com/data/icons/essentials-volume-3/128/boxing-gloves-512.png')
         
