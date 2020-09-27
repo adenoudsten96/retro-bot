@@ -303,7 +303,7 @@ async def on_message(message):
         if when[0] == '':
             embedVar.add_field(name=":clock8: Time", value="{}".format("Sometime tonight"), inline=False)
         else:
-            embedVar.add_field(name=":clock8: Time", value="{}".format(when[0]), inline=False)
+            embedVar.add_field(name=":clock8: Time", value="{}".format(when[1]), inline=False)
         embedVar.add_field(name="{} Accepted (0)".format(accepted), value="{}".format("-"), inline=True)
         embedVar.add_field(name="{} Declined (0)".format(declined), value="{}".format("-"), inline=True)
         if tent == "":
