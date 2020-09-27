@@ -1,6 +1,7 @@
 import os
 import random
 import discord
+from sqlalchemy import exc
 import inters
 import re
 import datetime
@@ -32,6 +33,7 @@ class Game(Base):
 
     id   = Column(Integer, primary_key=True)
     name = Column(String)
+    icon_url = Column(String)
 
     def __init__(self, name):
         self.name = name
@@ -270,8 +272,6 @@ async def on_message(message):
             return
         # Get time
         when = message.content.split('"')[2:]
-        if not when:
-            when = "Sometime tonight"
 
         # Save event to DB
         sess = Session()
@@ -284,9 +284,11 @@ async def on_message(message):
         # Add group members as tentative
         try:
             game_id = sess.query(Game).filter(Game.name == game.lower()).one()
+            game_db = sess.query(Game).filter(Game.name == game.lower()).first()
         except:
-            await message.channel.send(":robot: Game not found. Use !addgame")
+            await message.channel.send(":robot: Game not found. Use !addgame to add it.".format(game))
             return
+
         gamers = sess.query(GamePlayers).filter(GamePlayers.game_id == game_id.id).all()
         global tentative_counter
         tentative_counter = len(gamers)
@@ -298,11 +300,20 @@ async def on_message(message):
         colours = [0x1cde12, 0x25bab8, 0x4f1db3, 0xc9163a]
 
         embedVar = discord.Embed(title="**{} wants to play {}!**".format(message.author.display_name, game), color=random.choice(colours))
-        embedVar.add_field(name=":clock8: Time", value="{}".format(when[0]), inline=False)
+        if when[0] == '':
+            embedVar.add_field(name=":clock8: Time", value="{}".format("Sometime tonight"), inline=False)
+        else:
+            embedVar.add_field(name=":clock8: Time", value="{}".format(when[0]), inline=False)
         embedVar.add_field(name="{} Accepted (0)".format(accepted), value="{}".format("-"), inline=True)
         embedVar.add_field(name="{} Declined (0)".format(declined), value="{}".format("-"), inline=True)
-        embedVar.add_field(name="{} Tentative ({})".format(tentative, tentative_counter), value="{}".format(tent), inline=True)
-        embedVar.set_footer(text='Created by {} on {} \nUse the buttons below to join/leave. Creator can ping/DM all gamers in group.'.format(message.author.name, datetime.date.today().strftime("%d/%m")))
+        if tent == "":
+            embedVar.add_field(name="{} Tentative ({})".format(tentative, tentative_counter), value="-", inline=True)
+        else:
+            embedVar.add_field(name="{} Tentative ({})".format(tentative, tentative_counter), value="{}".format(tent), inline=True)
+        if game_db.icon_url:
+            embedVar.set_thumbnail(url=game_db.icon_url)
+
+        embedVar.set_footer(text='Created by {} on {} \nUse the buttons below to join/leave. Creator can ping/DM all gamers in group and remove event.'.format(message.author.display_name, datetime.date.today().strftime("%d/%m")))
         x = await message.channel.send(embed=embedVar)
         ###### Embed construct ########
 
@@ -313,6 +324,7 @@ async def on_message(message):
         await x.add_reaction("🗑️")
         await x.add_reaction("❗")
         await x.add_reaction("✉️")
+        await x.add_reaction("💀")
 
     # Add gamers to game
     if message.content.split(" ")[0] == "!addgamers":
@@ -320,28 +332,31 @@ async def on_message(message):
         try:
             game = message.content.split('"')[1].lower()
         except:
-            await message.channel.send(":robot: Something went wrong")
+            await message.channel.send(":robot: Something went wrong.")
             return
 
-        # Get the gamers to be added to the game, normalize ID's
+        # Get the gamers to be added to the game
         try:
             gamers = message.content.split('"')[2].split(" ")[1:]
         except:
-            await message.channel.send(":robot: Something went wrong")
+            await message.channel.send(":robot: Something went wrong.")
             return
-
         # Add gamers to game
         counter = 0
         sess = Session()
+        try:
+            game_id = sess.query(Game).filter(Game.name == game.lower()).one()
+        except:
+            await message.channel.send(":robot: Something went wrong.")
+            return
         for gamer in gamers:
             gamer = re.sub("\ |\@|\&|\!|\<|\>", '', gamer)
             # Check if gamer already exists
-            gamer_exists = sess.query(GamePlayers).filter(GamePlayers.player_id == int(gamer)).count()
+            gamer_exists = sess.query(GamePlayers).filter(and_(GamePlayers.player_id == int(gamer), (GamePlayers.game_id == game_id.id))).count()
             if gamer_exists:
                 await message.channel.send(":robot: <@!{}> already in group for game {}, skipping..".format(gamer, game.capitalize()))
             else:
                 # Add gamer to game
-                game_id = sess.query(Game).filter(Game.name == game).one()
                 new_gamer = GamePlayers(game_id.id, gamer)
                 sess.add(new_gamer)
                 counter += 1
@@ -355,23 +370,24 @@ async def on_message(message):
         try:
             game = message.content.split('"')[1].lower()
         except:
-            await message.channel.send(":robot: Something went wrong")
+            await message.channel.send(":robot: Something went wrong.")
             return
 
         # Get the gamers to be removed from the game, normalize ID's
         try:
             gamers = message.content.split('"')[2].split(" ")[1:]
         except:
-            await message.channel.send(":robot: Something went wrong")
+            await message.channel.send(":robot: Something went wrong.")
             return
 
         # Remove gamers to game
         counter = 0
         sess = Session()
+        game_id = sess.query(Game).filter(Game.name == game.lower()).one()
         for gamer in gamers:
             gamer = re.sub("\ |\@|\&|\!|\<|\>", '', gamer)
             # Check if gamer exists
-            gamer_exists = sess.query(GamePlayers).filter(GamePlayers.player_id == int(gamer)).count()
+            gamer_exists = sess.query(GamePlayers).filter(and_(GamePlayers.player_id == int(gamer), (GamePlayers.game_id == game_id.id))).count()
             if gamer_exists:
                 sess.query(GamePlayers).filter(GamePlayers.player_id == int(gamer)).delete()
                 counter += 1
@@ -387,7 +403,7 @@ async def on_message(message):
         try:
             game = message.content.split('"')[1].lower()
         except:
-            await message.channel.send(":robot: Could not add game. Did you put the game name in quotes?")
+            await message.channel.send(":robot: Something went wrong. Did you put the game name in quotes?")
             return
 
         # Add game to game database if not exists
@@ -398,11 +414,39 @@ async def on_message(message):
             sess.add(new_game)
             sess.commit()
             sess.close()
-            await message.channel.send(":robot: Game added")
+            await message.channel.send(":robot: Game added.")
         else:
-            await message.channel.send(":robot: Game already exists")
+            await message.channel.send(":robot: Game already exists!")
             return
 
+    # Add icon url
+    if message.content.split(" ")[0] == "!seticon":
+        # Get the game, save as lowercase
+        try:
+            game = message.content.split('"')[1].lower()
+        except:
+            await message.channel.send(":robot: Something went wrong. Did you provide an URL?")
+            return
+
+        # Get the URL to be added to the game
+        try:
+            icon_url = message.content.split('"')[2]
+        except:
+            await message.channel.send(":robot: Something went wrong.")
+            return
+        
+        # Check if the game exists
+        sess = Session()
+        try:
+            game_db = sess.query(Game).filter(Game.name == game).first()
+            game_db.icon_url = icon_url
+            sess.commit()
+            sess.close()
+            await message.channel.send(":robot: Icon URL added!")
+        except:
+            await message.channel.send(":robot: Could not add URL to game.")
+            sess.close()
+            return
 
 @client.event
 async def on_reaction_add(reaction, user):
@@ -417,7 +461,7 @@ async def on_reaction_add(reaction, user):
         global declined_counter
         global tentative_counter
 
-        # Get users from lists
+        # Get current users from lists
         acc_list = reaction.message.embeds[0].fields[1].value.split("\n")
         dec_list = reaction.message.embeds[0].fields[2].value.split("\n")
         tent_list = reaction.message.embeds[0].fields[3].value.split("\n")
@@ -426,11 +470,14 @@ async def on_reaction_add(reaction, user):
             '''
             This function removes the user from a list, and turns it back into a string to pass to the embed.
             '''
+
             for i in l:
-                if i == "<@!{}>".format(user.id) or i == "<@{}>".format(user.id):
+                i_norm = re.sub("\ |\@|\&|\!|\<|\>", '', i)
+                if i_norm == str(user.id):
                     l.remove(i)
+            # Set the list to a dash if it is empty
             if l == []:
-                new_list = "-"
+                new_list = "-\n"
                 return new_list
             new_list = ""
             for i in l:
@@ -445,58 +492,78 @@ async def on_reaction_add(reaction, user):
             global declined_counter
             global tentative_counter
 
-            accepted_counter = len(acc_list)
-            declined_counter = len(dec_list)
-            tentative_counter = len(tent_list)
+            # Transform strings in to list so we can easily count, remove whitespace and dashes
+            acc_split = acc_list.split("\n")
+            dec_split = dec_list.split("\n")
+            tent_split = tent_list.split("\n")
+            for x in [acc_split, dec_split, tent_split]:
+                try:
+                    x.remove('')
+                except ValueError:
+                    pass
+                try:
+                    x.remove('-')
+                except ValueError:
+                    pass 
+            
+            # Update the counters after cleaning up
+            accepted_counter = len(acc_split)
+            declined_counter = len(dec_split)
+            tentative_counter = len(tent_split)
 
         # Remove user from all lists and decrement counters
         if index == 4:
-            new_dec = remove_user(dec_list)
-            new_tent = remove_user(tent_list)
-            new_acc = remove_user(acc_list)
+            dec_list = remove_user(dec_list)
+            tent_list = remove_user(tent_list)
+            acc_list = remove_user(acc_list)
             update_counters()
-            updated_embed = reaction.message.embeds[0].set_field_at(1, name="{} Accepted ({})".format(accepted, accepted_counter), value=new_acc)
-            updated_embed = reaction.message.embeds[0].set_field_at(2, name="{} Declined ({})".format(declined, declined_counter), value=new_dec)
-            updated_embed = reaction.message.embeds[0].set_field_at(3, name="{} Tentative ({})".format(tentative, tentative_counter), value=new_tent)
+            updated_embed = reaction.message.embeds[0].set_field_at(1, name="{} Accepted ({})".format(accepted, accepted_counter), value=acc_list)
+            updated_embed = reaction.message.embeds[0].set_field_at(2, name="{} Declined ({})".format(declined, declined_counter), value=dec_list)
+            updated_embed = reaction.message.embeds[0].set_field_at(3, name="{} Tentative ({})".format(tentative, tentative_counter), value=tent_list)
             return updated_embed
 
         # Return if already in list
-        current_accepted = reaction.message.embeds[0].fields[index].value.split("\n")
-        for i in current_accepted:
-            if i == "<@{}>".format(user.id):
+        current_list = reaction.message.embeds[0].fields[index].value.split("\n")
+        for i in current_list:
+            # Normalize ID
+            i = re.sub("\ |\@|\&|\!|\<|\>", '', i)
+            if i == str(user.id):
                 return 0
         
         # Add user to list and update the counters
         updated_list = reaction.message.embeds[0].fields[index].value.strip("-")
         updated_list += "\n{}".format(user.mention)
-        update_counters()
 
         # Update and return the new embed based on index
         if index == 1:
-            new_dec = remove_user(dec_list)
-            new_tent = remove_user(tent_list)
+            acc_list = updated_list
+            dec_list = remove_user(dec_list)
+            tent_list = remove_user(tent_list)
             update_counters()
             updated_embed = reaction.message.embeds[0].set_field_at(1, name="{} Accepted ({})".format(accepted, accepted_counter), value=updated_list)
-            updated_embed = reaction.message.embeds[0].set_field_at(2, name="{} Declined ({})".format(declined, declined_counter), value=new_dec)
-            updated_embed = reaction.message.embeds[0].set_field_at(3, name="{} Tentative ({})".format(tentative, tentative_counter), value=new_tent)
+            updated_embed = reaction.message.embeds[0].set_field_at(2, name="{} Declined ({})".format(declined, declined_counter), value=dec_list)
+            updated_embed = reaction.message.embeds[0].set_field_at(3, name="{} Tentative ({})".format(tentative, tentative_counter), value=tent_list)
             return updated_embed
         elif index == 2:
-            new_acc = remove_user(acc_list)
-            new_tent = remove_user(tent_list)
+            dec_list = updated_list
+            acc_list = remove_user(acc_list)
+            tent_list = remove_user(tent_list)
             update_counters()
-            updated_embed = reaction.message.embeds[0].set_field_at(1, name="{} Accepted ({})".format(accepted, accepted_counter), value=new_acc)
+            updated_embed = reaction.message.embeds[0].set_field_at(1, name="{} Accepted ({})".format(accepted, accepted_counter), value=acc_list)
             updated_embed = reaction.message.embeds[0].set_field_at(2, name="{} Declined ({})".format(declined, declined_counter), value=updated_list)
-            updated_embed = reaction.message.embeds[0].set_field_at(3, name="{} Tentative ({})".format(tentative, tentative_counter), value=new_tent)
+            updated_embed = reaction.message.embeds[0].set_field_at(3, name="{} Tentative ({})".format(tentative, tentative_counter), value=tent_list)
             return updated_embed
         elif index == 3:
-            new_acc = remove_user(acc_list)
-            new_dec = remove_user(dec_list)
+            tent_list = updated_list
+            acc_list = remove_user(acc_list)
+            dec_list = remove_user(dec_list)
             update_counters()
-            updated_embed = reaction.message.embeds[0].set_field_at(1, name="{} Accepted ({})".format(accepted, accepted_counter), value=new_acc)
-            updated_embed = reaction.message.embeds[0].set_field_at(2, name="{} Declined ({})".format(declined, declined_counter), value=new_dec)
+            updated_embed = reaction.message.embeds[0].set_field_at(1, name="{} Accepted ({})".format(accepted, accepted_counter), value=acc_list)
+            updated_embed = reaction.message.embeds[0].set_field_at(2, name="{} Declined ({})".format(declined, declined_counter), value=dec_list)
             updated_embed = reaction.message.embeds[0].set_field_at(3, name="{} Tentative ({})".format(tentative, tentative_counter), value=updated_list)
             return updated_embed
 
+    # Ignore our own reactions
     if user == client.user:
         return
 
@@ -505,43 +572,106 @@ async def on_reaction_add(reaction, user):
 
         # Accept - index 1
         if str(reaction) == accepted:
+            await reaction.message.remove_reaction(accepted, user)
             new_embed = process_choice(reaction, user, 1)
             if new_embed == 0:
                 return
             await reaction.message.edit(embed=new_embed)
-            await reaction.message.remove_reaction(accepted, user)
+            
 
         # Decline - index 2
         if str(reaction) == declined:
+            await reaction.message.remove_reaction(declined, user)
             new_embed = process_choice(reaction, user, 2)
             if new_embed == 0:
                 return
             await reaction.message.edit(embed=new_embed)
-            await reaction.message.remove_reaction(declined, user)
+            
 
         # Tentative - index 3
         if str(reaction) == tentative:
+            await reaction.message.remove_reaction(tentative, user)
             new_embed = process_choice(reaction, user, 3)
             if new_embed == 0:
                 return
             await reaction.message.edit(embed=new_embed)
-            await reaction.message.remove_reaction(tentative, user)
+           
 
-        # Remove
+        # Remove from all lists
         if str(reaction) == "🗑️":
+            await reaction.message.remove_reaction("🗑️", user)
             new_embed = process_choice(reaction, user, 4)
             if new_embed == 0:
                 return
             await reaction.message.edit(embed=new_embed)
-            await reaction.message.remove_reaction("🗑️", user)
+            
 
-        # Ping
+        # Ping all users
         if str(reaction) == "❗":
             await reaction.message.remove_reaction("❗", user)
-
-        # DM
+            creator = reaction.message.embeds[0].footer.text.split("\n")[0].split(" ")[2:][:-3]
+            c = ""
+            # Only allow pings by creator
+            if user.display_name.replace(" ", "") == c.join(creator):
+                sess = Session()
+                game = sess.query(Event).order_by(Event.id.desc()).first()
+                game_id = sess.query(Game).filter(Game.name == game.game).first()
+                players = sess.query(GamePlayers).filter(GamePlayers.game_id == game_id.id).all()
+                sess.close()
+                ping = ""
+                for p in players:
+                    if p.player_id == user.id:
+                        continue
+                    ping += "<@!{}> ".format(p.player_id)
+                if ping == "":
+                    return
+                await reaction.message.channel.send(ping)
+            
+        
+        # DM all users
         if str(reaction) == "✉️":
             await reaction.message.remove_reaction("✉️", user)
+            # Get Discord name from footer
+            creator = reaction.message.embeds[0].footer.text.split("\n")[0].split(" ")[2:][:-3]
+            c = ""
+            # Only allow DM by creator
+            if user.display_name.replace(" ", "") == c.join(creator):
+                sess = Session()
+                event = sess.query(Event).order_by(Event.id.desc()).first()
+                game = sess.query(Game).filter(Game.name == event.game).first()
+                players = sess.query(GamePlayers).filter(GamePlayers.game_id == game.id).all()
+                sess.close()
+                game_name = event.game.capitalize()
+
+                if players == []:
+                    return
+
+                ### Construct embed ####
+                embedVar = discord.Embed(title="**{} wants to know if you want to play {}!**".format(creator[0], game_name), color=0x25bab8)
+                embedVar.add_field(name="Let them know by clicking this link:", value="[Click me!](https://discordapp.com/channels/335195731419987978/{}/{})".format(reaction.message.channel.id, reaction.message.id))
+                if game.icon_url:
+                    embedVar.set_thumbnail(url=game.icon_url)
+                ###########
+
+                for p in players:
+                    if p.player_id == user.id:
+                        continue
+                    user = client.get_user(p.player_id)
+                    try:
+                        await user.send(embed=embedVar)
+                    except AttributeError:
+                        pass
+                await reaction.message.channel.send(":robot: DMing {} players!".format(len(players) - 1))
+            
+
+        # Delete embed
+        if str(reaction) == "💀":
+
+            creator = reaction.message.embeds[0].footer.text.split("\n")[0].split(" ")[2:][:-3]
+            c = ""
+            # Only allow delete by creator
+            if user.display_name.replace(" ", "") == c.join(creator):
+                await reaction.message.delete()
 
 client.run(os.environ['RETROBOT'])
 
