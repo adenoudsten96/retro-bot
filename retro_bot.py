@@ -264,14 +264,16 @@ async def on_message(message):
     # LFM system
     if message.content.startswith("!lfm"):
 
-        # Get game name
-        try:
-            game = message.content.split('"')[1]
-        except:
-            await message.channel.send(":robot: Something went wrong. Did you put the game name in quotes?")
+        # Get the game, save as lowercase
+        check = re.findall("\[([^[\]]*)\]", message.content)
+        if len(check) != 2:
+            await message.channel.send(":robot: Something went wrong. Did you put the game name and time between brackets?")
             return
-        # Get time
-        when = message.content.split('"')[2:]
+        game = check[0]
+        try:
+            when = check[1]
+        except IndexError:
+            when = "Sometime tonight"
 
         # Save event to DB
         sess = Session()
@@ -280,7 +282,6 @@ async def on_message(message):
         sess.commit()
         
         ###### Embed construct ########
-
         # Add group members as tentative
         try:
             game_id = sess.query(Game).filter(Game.name == game.lower()).one()
@@ -289,6 +290,7 @@ async def on_message(message):
             await message.channel.send(":robot: Game not found. Use !addgame to add it.".format(game))
             return
 
+        # Get the gamers from the database, and upate the tentative counter for the event
         gamers = sess.query(GamePlayers).filter(GamePlayers.game_id == game_id.id).all()
         global tentative_counter
         tentative_counter = len(gamers)
@@ -297,13 +299,10 @@ async def on_message(message):
             tent += "<@!{}>\n".format(gamer.player_id)
         sess.close()
 
+        # Add all the fields
         colours = [0x1cde12, 0x25bab8, 0x4f1db3, 0xc9163a]
-
         embedVar = discord.Embed(title="**{} wants to play {}!**".format(message.author.display_name, game), color=random.choice(colours))
-        if when[0] == '':
-            embedVar.add_field(name=":clock8: Time", value="{}".format("Sometime tonight"), inline=False)
-        else:
-            embedVar.add_field(name=":clock8: Time", value="{}".format(when[1]), inline=False)
+        embedVar.add_field(name=":clock8: Time", value="{}".format(when), inline=False)
         embedVar.add_field(name="{} Accepted (0)".format(accepted), value="{}".format("-"), inline=True)
         embedVar.add_field(name="{} Declined (0)".format(declined), value="{}".format("-"), inline=True)
         if tent == "":
@@ -312,42 +311,53 @@ async def on_message(message):
             embedVar.add_field(name="{} Tentative ({})".format(tentative, tentative_counter), value="{}".format(tent), inline=True)
         if game_db.icon_url:
             embedVar.set_thumbnail(url=game_db.icon_url)
-
         embedVar.set_footer(text='Created by {} on {} \nUse the buttons below to join/leave. Creator can ping/DM all gamers in group and remove event.'.format(message.author.display_name, datetime.date.today().strftime("%d/%m")))
-        x = await message.channel.send(embed=embedVar)
-        ###### Embed construct ########
+        
+        # Try and post the embed, catch HTTP error codes
+        try:
+            x = await message.channel.send(embed=embedVar)
 
-        # Add emoji to message
-        await x.add_reaction(accepted)
-        await x.add_reaction(declined)
-        await x.add_reaction(tentative)
-        await x.add_reaction("🗑️")
-        await x.add_reaction("❗")
-        await x.add_reaction("✉️")
-        await x.add_reaction("💀")
+            # Add emoji to message
+            await x.add_reaction(accepted)
+            await x.add_reaction(declined)
+            await x.add_reaction(tentative)
+            await x.add_reaction("🗑️")
+            await x.add_reaction("❗")
+            await x.add_reaction("✉️")
+            await x.add_reaction("💀")
+        except discord.errors.HTTPException:
+            await message.channel.send(":robot: Could not create event. Maybe the icon link is wrong?")
+        ###### Embed construct ########
 
     # Add gamers to game
     if message.content.split(" ")[0] == "!addgamers":
         # Get the game, save as lowercase
-        try:
-            game = message.content.split('"')[1].lower()
-        except:
-            await message.channel.send(":robot: Something went wrong.")
+        check = re.findall("\[([^[\]]*)\]", message.content)
+        if len(check) != 1:
+            await message.channel.send(":robot: Something went wrong. Did you put the game name between brackets?")
             return
+        game = check[0].lower()
 
         # Get the gamers to be added to the game
+        print(message.content.split(']')[1])
         try:
-            gamers = message.content.split('"')[2].split(" ")[1:]
-        except:
+            gamers = message.content.split(']')[1].split(" ")[1:]
+            # Remove any extra spaces if there are any
+            try:
+                gamers.remove('')
+            except Exception as e:
+                pass
+        except Exception as e:
             await message.channel.send(":robot: Something went wrong.")
             return
+        
         # Add gamers to game
         counter = 0
         sess = Session()
         try:
             game_id = sess.query(Game).filter(Game.name == game.lower()).one()
-        except:
-            await message.channel.send(":robot: Something went wrong.")
+        except Exception as e:
+            await message.channel.send(":robot: Something went wrong. |{}|".format(e))
             return
         for gamer in gamers:
             gamer = re.sub("\ |\@|\&|\!|\<|\>", '', gamer)
@@ -367,15 +377,15 @@ async def on_message(message):
     # Remove gamers from game
     if message.content.split(" ")[0] == "!removegamers":
         # Get the game, save as lowercase
-        try:
-            game = message.content.split('"')[1].lower()
-        except:
-            await message.channel.send(":robot: Something went wrong.")
+        check = re.findall("\[([^[\]]*)\]", message.content)
+        if len(check) != 1:
+            await message.channel.send(":robot: Something went wrong. Did you put the game name between brackets?")
             return
+        game = check[0].lower()
 
         # Get the gamers to be removed from the game, normalize ID's
         try:
-            gamers = message.content.split('"')[2].split(" ")[1:]
+            gamers = message.content.split(']')[1].split(" ")[1:]
         except:
             await message.channel.send(":robot: Something went wrong.")
             return
@@ -400,11 +410,11 @@ async def on_message(message):
     # Add game
     if message.content.split(" ")[0] == "!addgame":
         # Get the game, save as lowercase
-        try:
-            game = message.content.split('"')[1].lower()
-        except:
-            await message.channel.send(":robot: Something went wrong. Did you put the game name in quotes?")
+        check = re.findall("\[([^[\]]*)\]", message.content)
+        if len(check) != 1:
+            await message.channel.send(":robot: Something went wrong. Did you put the game name between brackets?")
             return
+        game = check[0].lower()
 
         # Add game to game database if not exists
         sess = Session()
@@ -422,17 +432,16 @@ async def on_message(message):
     # Add icon url
     if message.content.split(" ")[0] == "!seticon":
         # Get the game, save as lowercase
-        try:
-            game = message.content.split('"')[1].lower()
-        except:
-            await message.channel.send(":robot: Something went wrong. Did you provide an URL?")
+        check = re.findall("\[([^[\]]*)\]", message.content)
+        if len(check) != 1:
+            await message.channel.send(":robot: Something went wrong. Did you put the game between brackets?")
             return
+        game = check[0].lower()
 
-        # Get the URL to be added to the game
-        try:
-            icon_url = message.content.split('"')[2]
-        except:
-            await message.channel.send(":robot: Something went wrong.")
+        # Get the gamers to be added to the game
+        icon_url = message.content.split(']')[1]
+        if not icon_url:
+            await message.channel.send(":robot: Something went wrong. Did you add a link?")
             return
         
         # Check if the game exists
@@ -666,7 +675,7 @@ async def on_reaction_add(reaction, user):
 
         # Delete embed
         if str(reaction) == "💀":
-
+            await reaction.message.remove_reaction("✉️", user)
             creator = reaction.message.embeds[0].footer.text.split("\n")[0].split(" ")[2:][:-3]
             c = ""
             # Only allow delete by creator
