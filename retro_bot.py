@@ -5,10 +5,17 @@ from sqlalchemy import exc
 import inters
 import re
 import datetime
+import arrow
+import asyncio
+
 
 from sqlalchemy import create_engine, Column, String, Integer, or_, and_, DateTime, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+from discord.ext.commands import command, Cog
+from discord_components import DiscordComponents, Button, ButtonStyle, InteractionType
+
 
 ############################# DB ######################################
 engine = create_engine('sqlite:///bot.db')
@@ -70,6 +77,7 @@ Base.metadata.create_all(engine)
 accepted = "<:accepted:759402101398175784>"
 declined = "<:declined:759402093227409418>"
 tentative = "<:tentative:759402084633804842>"
+yep = "<:YEP:796816195537076274>"
 client = discord.Client()
 intlist = inters.Intlist('inters.json')
 # https://discordapp.com/oauth2/authorize?&client_id=745978012692119642&scope=bot&permissions=8192
@@ -78,10 +86,13 @@ intlist = inters.Intlist('inters.json')
 accepted_counter = 0 
 declined_counter = 0
 tentative_counter = 0
+
+bot_dev_channel = 759474428144123934
 ########################### GLOBAL ##################################
 
 @client.event
 async def on_ready():
+    DiscordComponents(client)
     print('We have logged in as {0.user}'.format(client))
 
 @client.event
@@ -89,6 +100,19 @@ async def on_message(message):
     # Ignore our own messages
     if message.author == client.user:
         return
+
+    if message.content.startswith('!test'):
+        await message.channel.send('test', components=[
+            [
+                Button(style=ButtonStyle.red, label="EMOJI", emoji="😂"),
+                Button(style=ButtonStyle.green, label="GREEN"),
+                Button(style=ButtonStyle.red, label="RED", disabled=True),
+                Button(style=ButtonStyle.grey, label="GREY"),
+            ],
+            Button(style=ButtonStyle.blue, label="BLUE"),
+            Button(style=ButtonStyle.URL, label="URL", url="https://www.example.com"),
+        ],
+    )
     
     # Nuke X amount of messages
     if message.content.startswith('!nuke'):
@@ -682,15 +706,13 @@ async def on_reaction_add(reaction, user):
             if user.display_name.replace(" ", "") == c.join(creator):
                 await reaction.message.delete()
 
+@client.event
+async def on_button_click(res):
+
+    print(res)
+
+    await res.respond(
+        type=InteractionType.ChannelMessageWithSource, content=f"{res.component.label} pressed"
+    )
+
 client.run(os.environ['RETROBOT'])
-
-
-# Might need this later
-# async def my_background_task():
-#     await client.wait_until_ready()
-#     while not client.is_closed():
-#         message = await client.get_channel(channelId).fetch_message(messageId)
-#         await message.edit(embed = newEmbed)
-#         await asyncio.sleep(300)
-
-# bg_task = client.loop.create_task(my_background_task())
